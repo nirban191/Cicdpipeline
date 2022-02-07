@@ -1,0 +1,160 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  // ARM Template Parameters Definition
+  "parameters": {
+    "logicAppName": {
+      "type": "string"
+    },
+    "servicebus_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "servicebus"
+    },
+    "servicebus_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "sbnamespace"
+    },
+    "servicebus_1_connectionString": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Azure Service Bus Connection String"
+      }
+    },
+    "endpointPassword-armparam": {
+      "type": "securestring"
+    },
+    "endpointUrl-armparam": {
+      "type": "string"
+    },
+    "environmentCode": {
+      "type": "string"
+    }
+  },
+  // ARM Template Variables Definition
+  "variables": {
+    "endpointUsername-armvar": "[concat('username-', parameters('environmentCode'))]"
+  },
+  "resources": [
+    {
+      // Logic App Definition
+      // The Logic App Workflow Definition Language does not support comments like this.
+      // These will be removed when deployed by the Azure Resource Manager. 
+      "name": "[parameters('logicAppName')]",
+      "type": "Microsoft.Logic/workflows",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-06-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', parameters('servicebus_1_Connection_Name'))]"
+      ],
+      "properties": {
+        "state": "Disabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "HTTP": {
+              "type": "Http",
+              "inputs": {
+                "method": "POST",
+                "uri": "@{parameters('endpointUrl')}",
+                "body": "@base64ToString(triggerBody()?['ContentData'])",
+                "authentication": {
+                  "type": "Basic",
+                  "username": "@{parameters('endpointUsername')}",
+                  "password": "@{parameters('endpointPassword')}"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          // Logic App Parameters Definition
+          // Default values are only required when defining them at Development time via Code View.
+          // If deployed from an ARM Template, default values are not required. 
+          // I'm removing them so the Logic App definition is cleaner after an automated deployment. 
+          // When defining Logic Apps parameters, we use the same syntax as the one used for ARM Templates, 
+          // but within the Logic App definition. 
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            },
+            "endpointPassword": {
+              "type": "secureString"
+            },
+            "endpointUrl": {
+              "type": "String"
+            },
+            "endpointUsername": {
+              "type": "String"
+            }
+          },
+          "triggers": {
+            "When_a_message_is_received_in_a_queue_(auto-complete)": {
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['servicebus']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/@{encodeURIComponent('myqueue')}/messages/head",
+                "queries": {
+                  "queueType": "Main"
+                }
+              },
+              "recurrence": {
+                "frequency": "Minute",
+                "interval": 3
+              }
+            }
+          },
+          "contentVersion": "1.0.0.0",
+          "outputs": {}
+        },
+        // Logic App Parameters Value Set
+        // In this section we can use ARM expressions and functions, including parameters, variables or any
+        // expression like concat, coalesce, etc.
+        "parameters": {
+          "$connections": {
+            "value": {
+              "servicebus": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/', 'servicebus')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('servicebus_1_Connection_Name'))]",
+                "connectionName": "[parameters('servicebus_1_Connection_Name')]"
+              }
+            }
+          },
+          // Set the value of Logic App parameter with an ARM parameter. 
+          "endpointPassword": {
+            "value": "[parameters('endpointPassword-armparam')]"
+          },
+          // Set the value of Logic App parameter with an ARM parameter. 
+          "endpointUrl": {
+            "value": "[parameters('endpointUrl-armparam')]"
+          },
+          // Set the value of Logic App parameter with an ARM variable. 
+          "endpointUsername": {
+            "value": "[variables('endpointUsername-armvar')]"
+          }
+        }
+      }
+    },
+    // API Connections
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('servicebus_1_Connection_Name')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/', 'servicebus')]"
+        },
+        "displayName": "[parameters('servicebus_1_Connection_DisplayName')]",
+        "parameterValues": {
+          "connectionString": "[parameters('servicebus_1_connectionString')]"
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}
